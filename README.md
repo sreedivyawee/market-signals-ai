@@ -11,6 +11,8 @@ Generation (RAG), and a synthesis layer to produce a unified investment
 signal with confidence, reasoning, conflict detection, and supporting
 sources.
 
+https://hackverse-market-ai.ai.studio
+
 ---
 
 ## System Architecture
@@ -46,4 +48,3 @@ sources.
               Final Signal
 
 
-https://hackverse-market-ai.ai.studio
