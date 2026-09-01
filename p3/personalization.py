@@ -1,114 +1,201 @@
-from profile import get_user_profile
-from portfolio import calculate_portfolio_allocation
+from p3.profile import get_user_profile
+from p3.portfolio import calculate_portfolio_allocation
 
 
-def personalize_user(user_id, ticker, agent_results, current_prices):
+def get_result_data(agent_output):
+    """
+    Extract the result from an agent response.
 
-    # -----------------------------
-    # 1. Get user profile
-    # -----------------------------
+    Supports both dictionaries and Pydantic objects.
+    """
+
+    if agent_output is None:
+        return {}
+
+    if isinstance(agent_output, dict):
+        return agent_output.get("result", {})
+
+    return getattr(agent_output, "result", {})
+
+
+def get_value(obj, key, default=None):
+    """
+    Read a value from either a dictionary or Pydantic object.
+    """
+
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+
+    return getattr(obj, key, default)
+
+
+def personalize_user(
+    user_id,
+    ticker,
+    agent_results,
+    current_prices,
+    synthesis_result=None
+):
+    """
+    Personalize the market analysis for a specific user.
+    """
+
+    # ==================================================
+    # 1. GET USER PROFILE
+    # ==================================================
+
     profile = get_user_profile(user_id)
 
     if profile is None:
-        return {"error": "User not found"}
+        return {
+            "error": "User not found"
+        }
 
-    # -----------------------------
-    # 2. Calculate portfolio allocation
-    # -----------------------------
+    # ==================================================
+    # 2. GET SYNTHESIS RESULT
+    # ==================================================
+
+    market_signal = "HOLD"
+    market_confidence = 0.0
+
+    if synthesis_result:
+
+        market_signal = synthesis_result.get(
+            "signal",
+            "HOLD"
+        )
+
+        market_confidence = synthesis_result.get(
+            "confidence",
+            0.0
+        )
+
+    # ==================================================
+    # 3. CALCULATE PORTFOLIO ALLOCATION
+    # ==================================================
+
     allocation = calculate_portfolio_allocation(
         user_id,
         current_prices
     )
 
     if allocation is None:
-        return {"error": "Portfolio not found"}
+        return {
+            "error": "Portfolio not found"
+        }
 
-    # Percentage of the selected stock
-    current_exposure = allocation.get(ticker, 0)
-
-    # -----------------------------
-    # 3. Read P1 agent results
-    # -----------------------------
-
-    volatility_agent = agent_results.get(
-        "volatility_agent", {}
+    current_exposure = allocation.get(
+        ticker,
+        0
     )
 
-    volume_agent = agent_results.get(
-        "volume_agent", {}
+    # ==================================================
+    # 4. READ P1 AGENT RESULTS
+    # ==================================================
+
+    volatility_output = agent_results.get(
+        "volatility_agent"
     )
 
-    news_agent = agent_results.get(
-        "news_agent", {}
+    volume_output = agent_results.get(
+        "volume_agent"
     )
 
-    # P1 stores the useful information inside:
-    # agent → result → classification/confidence/score
-
-    volatility_result = volatility_agent.get(
-        "result", {}
+    news_output = agent_results.get(
+        "news_agent"
     )
 
-    volume_result = volume_agent.get(
-        "result", {}
+    # Extract actual result objects
+
+    volatility_result = get_result_data(
+        volatility_output
     )
 
-    news_result = news_agent.get(
-        "result", {}
+    volume_result = get_result_data(
+        volume_output
     )
 
-    volatility_classification = volatility_result.get(
-        "classification", "UNKNOWN"
+    news_result = get_result_data(
+        news_output
     )
 
-    volatility_confidence = volatility_result.get(
-        "confidence", 0
+    # ==================================================
+    # 5. EXTRACT AGENT VALUES
+    # ==================================================
+
+    volatility_classification = get_value(
+        volatility_result,
+        "classification",
+        "UNKNOWN"
     )
 
-    volatility_score = volatility_result.get(
-        "score", 0
+    volatility_confidence = get_value(
+        volatility_result,
+        "confidence",
+        0.0
     )
 
-    volume_classification = volume_result.get(
-        "classification", "UNKNOWN"
+    volatility_score = get_value(
+        volatility_result,
+        "score",
+        0.0
     )
 
-    volume_confidence = volume_result.get(
-        "confidence", 0
+    volume_classification = get_value(
+        volume_result,
+        "classification",
+        "UNKNOWN"
     )
 
-    volume_score = volume_result.get(
-        "score", 0
+    volume_confidence = get_value(
+        volume_result,
+        "confidence",
+        0.0
     )
 
-    sentiment_classification = news_result.get(
-        "classification", "UNKNOWN"
+    volume_score = get_value(
+        volume_result,
+        "score",
+        0.0
     )
 
-    sentiment_confidence = news_result.get(
-        "confidence", 0
+    sentiment_classification = get_value(
+        news_result,
+        "classification",
+        "UNKNOWN"
     )
 
-    sentiment_score = news_result.get(
-        "score", 0
+    sentiment_confidence = get_value(
+        news_result,
+        "confidence",
+        0.0
     )
 
-    # -----------------------------
-    # 4. Determine concentration
-    # -----------------------------
+    sentiment_score = get_value(
+        news_result,
+        "score",
+        0.0
+    )
+
+    # ==================================================
+    # 6. DETERMINE CONCENTRATION
+    # ==================================================
 
     if current_exposure > 40:
+
         concentration = "HIGH"
 
     elif current_exposure >= 20:
+
         concentration = "MEDIUM"
 
     else:
+
         concentration = "LOW"
 
-    # -----------------------------
-    # 5. Determine caution level
-    # -----------------------------
+    # ==================================================
+    # 7. DETERMINE CAUTION LEVEL
+    # ==================================================
 
     caution_level = "LOW"
 
@@ -125,23 +212,23 @@ def personalize_user(user_id, ticker, agent_results, current_prices):
         if volatility_classification == "HIGH_RISK":
             caution_level = "MEDIUM"
 
-    # -----------------------------
-    # 6. Generate explanation
-    # -----------------------------
+    # ==================================================
+    # 8. PERSONALIZED MESSAGE
+    # ==================================================
 
     if caution_level == "HIGH":
 
         message = (
             "High caution is advised because the user "
-            "has a low risk tolerance, high existing exposure, "
-            "or elevated stock volatility."
+            "has a low risk tolerance, high existing "
+            "exposure, or elevated stock volatility."
         )
 
     elif caution_level == "MEDIUM":
 
         message = (
-            "Moderate caution is advised because the stock "
-            "shows elevated risk."
+            "Moderate caution is advised because the "
+            "stock shows elevated risk."
         )
 
     else:
@@ -151,9 +238,28 @@ def personalize_user(user_id, ticker, agent_results, current_prices):
             "suitable for the user's risk profile."
         )
 
-    # -----------------------------
-    # 7. Return information for P2
-    # -----------------------------
+    # ==================================================
+    # 9. PERSONALIZED RECOMMENDATION
+    # ==================================================
+
+    personalized_signal = market_signal
+
+    if caution_level == "HIGH":
+
+        if market_signal == "BULLISH":
+            personalized_signal = "HOLD"
+
+        elif market_signal == "BEARISH":
+            personalized_signal = "SELL"
+
+    elif caution_level == "MEDIUM":
+
+        if market_signal == "BULLISH":
+            personalized_signal = "HOLD"
+
+    # ==================================================
+    # 10. FINAL PERSONALIZATION RESULT
+    # ==================================================
 
     return {
 
@@ -162,134 +268,178 @@ def personalize_user(user_id, ticker, agent_results, current_prices):
         "ticker": ticker,
 
         "user_profile": {
-            "risk_level": profile["risk_level"],
-            "investment_horizon": profile["investment_horizon"],
-            "investment_amount": profile["investment_amount"]
+
+            "risk_level":
+                profile["risk_level"],
+
+            "investment_horizon":
+                profile["investment_horizon"],
+
+            "investment_amount":
+                profile["investment_amount"]
         },
 
         "portfolio": {
-            "current_exposure_percent": current_exposure,
-            "concentration": concentration
+
+            "current_exposure_percent":
+                current_exposure,
+
+            "concentration":
+                concentration,
+
+            "allocation":
+                allocation
         },
 
         "market_signals": {
 
             "volatility": {
-                "classification": volatility_classification,
-                "confidence": volatility_confidence,
-                "score": volatility_score
+
+                "classification":
+                    volatility_classification,
+
+                "confidence":
+                    volatility_confidence,
+
+                "score":
+                    volatility_score
             },
 
             "volume": {
-                "classification": volume_classification,
-                "confidence": volume_confidence,
-                "score": volume_score
+
+                "classification":
+                    volume_classification,
+
+                "confidence":
+                    volume_confidence,
+
+                "score":
+                    volume_score
             },
 
             "sentiment": {
-                "classification": sentiment_classification,
-                "confidence": sentiment_confidence,
-                "score": sentiment_score
+
+                "classification":
+                    sentiment_classification,
+
+                "confidence":
+                    sentiment_confidence,
+
+                "score":
+                    sentiment_score
             }
         },
 
         "personalization": {
-            "caution_level": caution_level,
-            "message": message
-        }
-    }
-if __name__ == "__main__":
 
-    # Sample current market prices
-    test_prices = {
-        "TCS": 3500,
-        "INFY": 1500,
-        "RELIANCE": 2500
-    }
+            "caution_level":
+                caution_level,
 
-    # Sample P1 output using the same structure P1 gave us
-    test_agent_results = {
-
-        "volatility_agent": {
-            "status": "success",
-            "result": {
-                "classification": "LOW_RISK",
-                "confidence": 0.57,
-                "score": -0.37
-            }
+            "message":
+                message
         },
 
-        "volume_agent": {
-            "status": "success",
-            "result": {
-                "classification": "NEUTRAL",
-                "confidence": 0.20,
-                "score": 0.0
-            }
-        },
+        "recommendation": {
 
-        "news_agent": {
-            "status": "success",
-            "result": {
-                "classification": "NEUTRAL",
-                "confidence": 0.24,
-                "score": -0.04
-            }
+            "market_signal":
+                market_signal,
+
+            "market_confidence":
+                market_confidence,
+
+            "personalized_signal":
+                personalized_signal
         }
     }
 
-    result = personalize_user(
-        "U001",
-        "TCS",
-        test_agent_results,
-        test_prices
-    )
 
-    print(result)
+# ======================================================
+# SIMPLE TEST
+# ======================================================
 
 if __name__ == "__main__":
 
     current_prices = {
+
         "TCS": 3500,
+
         "INFY": 1500,
+
         "RELIANCE": 2500
     }
 
     test_agent_results = {
 
         "volatility_agent": {
+
             "status": "success",
+
             "result": {
-                "classification": "LOW_RISK",
-                "confidence": 0.57,
-                "score": -0.37
+
+                "classification":
+                    "LOW_RISK",
+
+                "confidence":
+                    0.57,
+
+                "score":
+                    -0.37
             }
         },
 
         "volume_agent": {
+
             "status": "success",
+
             "result": {
-                "classification": "NEUTRAL",
-                "confidence": 0.20,
-                "score": 0.0
+
+                "classification":
+                    "NEUTRAL",
+
+                "confidence":
+                    0.20,
+
+                "score":
+                    0.0
             }
         },
 
         "news_agent": {
+
             "status": "success",
+
             "result": {
-                "classification": "NEUTRAL",
-                "confidence": 0.24,
-                "score": -0.04
+
+                "classification":
+                    "NEUTRAL",
+
+                "confidence":
+                    0.24,
+
+                "score":
+                    -0.04
             }
         }
     }
 
+    test_synthesis = {
+
+        "signal": "HOLD",
+
+        "confidence": 0.50
+    }
+
     result = personalize_user(
-        "U001",
-        "TCS",
-        test_agent_results,
-        current_prices
+
+        user_id="U001",
+
+        ticker="TCS",
+
+        agent_results=test_agent_results,
+
+        current_prices=current_prices,
+
+        synthesis_result=test_synthesis
     )
 
     print(result)

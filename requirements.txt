@@ -1,0 +1,9 @@
+yfinance
+vaderSentiment
+pydantic
+pytest
+pandas
+numpy
+chromadb
+sentence-transformers
+streamlit

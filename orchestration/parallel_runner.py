@@ -1,56 +1,50 @@
 from concurrent.futures import ThreadPoolExecutor
 
-
-def volatility_agent():
-    return {
-        "agent": "volatility",
-        "signal": "BEARISH",
-        "confidence": 0.85,
-        "reasoning": "High volatility detected."
-    }
+from agents.volume_agent import volume_agent
+from agents.volatility_agent import volatility_agent
+from agents.news_agent import news_agent
 
 
-def volume_agent():
-    return {
-        "agent": "volume",
-        "signal": "BULLISH",
-        "confidence": 0.78,
-        "reasoning": "Trading volume is above average."
-    }
-
-
-def news_agent():
-    return {
-        "agent": "news",
-        "signal": "BEARISH",
-        "confidence": 0.72,
-        "reasoning": "Recent news contains negative signals."
-    }
-
-
-def run_all_agents():
+def run_all_agents(ticker="TCS"):
 
     with ThreadPoolExecutor(max_workers=3) as executor:
 
-        futures = [
-            executor.submit(volatility_agent),
-            executor.submit(volume_agent),
-            executor.submit(news_agent)
-        ]
+        futures = {
+            "volume_agent": executor.submit(
+                volume_agent,
+                ticker
+            ),
 
-        results = [
-            future.result()
-            for future in futures
-        ]
+            "volatility_agent": executor.submit(
+                volatility_agent,
+                ticker
+            ),
+
+            "news_agent": executor.submit(
+                news_agent,
+                ticker
+            )
+        }
+
+        results = {}
+
+        for name, future in futures.items():
+
+            result = future.result()
+
+            # Convert Pydantic model to dictionary
+            results[name] = result.model_dump()
 
     return results
 
 
 if __name__ == "__main__":
 
-    results = run_all_agents()
+    results = run_all_agents("TCS")
 
     print("\n===== AGENT RESULTS =====")
 
-    for result in results:
+    for name, result in results.items():
+
+        print(f"\n{name}:")
         print(result)

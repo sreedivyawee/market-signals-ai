@@ -1,57 +1,122 @@
 from rag.retriever import retrieve_documents
 
 
-def synthesize(
-    results,
-    retrieved_documents
-):
+def synthesize(results, retrieved_documents=None):
 
-    bullish_score = 0
-    bearish_score = 0
+    if retrieved_documents is None:
+        retrieved_documents = []
+
+    bullish_score = 0.0
+    bearish_score = 0.0
 
     reasons = []
 
-    # Process agent results
-    for result in results:
+    # --------------------------------------------------
+    # Process P1 agent results
+    # --------------------------------------------------
 
-        signal = result["signal"]
-        confidence = result["confidence"]
+    for agent_name, agent_data in results.items():
 
-        reasons.append(
-            f'{result["agent"].title()}: '
-            f'{signal} '
-            f'({confidence:.0%}) - '
-            f'{result["reasoning"]}'
+        result = agent_data.get("result", {})
+
+        classification = result.get(
+            "classification",
+            "UNKNOWN"
         )
 
-        if signal == "BULLISH":
+        confidence = float(
+            result.get("confidence", 0.0)
+        )
 
-            bullish_score += confidence
+        score = float(
+            result.get("score", 0.0)
+        )
 
-        elif signal == "BEARISH":
+        reasoning = result.get(
+            "reasoning",
+            []
+        )
 
-            bearish_score += confidence
+        if isinstance(reasoning, list):
+            reasoning_text = " ".join(reasoning)
+        else:
+            reasoning_text = str(reasoning)
 
-    # Detect conflicting signals
-    signals = [
-        result["signal"]
-        for result in results
-    ]
+        reasons.append(
+            f"{agent_name}: "
+            f"{classification} "
+            f"({confidence:.0%}) - "
+            f"{reasoning_text}"
+        )
 
-    conflict = len(set(signals)) > 1
+        # --------------------------------------------------
+        # Convert agent scores into overall signal
+        # --------------------------------------------------
 
-    # Calculate difference
+        if classification == "BULLISH":
+
+            bullish_score += abs(score) * confidence
+
+        elif classification == "BEARISH":
+
+            bearish_score += abs(score) * confidence
+
+        # Volatility is a risk signal rather than
+        # a directional signal.
+        #
+        # Therefore HIGH_RISK / ELEVATED_RISK
+        # contributes to bearish pressure.
+
+        elif classification in [
+            "HIGH_RISK",
+            "ELEVATED_RISK"
+        ]:
+
+            bearish_score += abs(score) * confidence
+
+    # --------------------------------------------------
+    # Detect conflict
+    # --------------------------------------------------
+
+    directional_signals = []
+
+    for agent_data in results.values():
+
+        classification = (
+            agent_data
+            .get("result", {})
+            .get("classification", "UNKNOWN")
+        )
+
+        if classification == "BULLISH":
+            directional_signals.append("BULLISH")
+
+        elif classification == "BEARISH":
+            directional_signals.append("BEARISH")
+
+    conflict = (
+        len(set(directional_signals)) > 1
+    )
+
+    # --------------------------------------------------
+    # Decide final signal
+    # --------------------------------------------------
+
     difference = (
         bullish_score -
         bearish_score
     )
 
-    # Decide final signal
-    if difference > 0.5:
+    total = (
+        bullish_score +
+        bearish_score
+    )
+
+    if difference > 0.10:
 
         final_signal = "BULLISH"
 
-    elif difference < -0.5:
+    elif difference < -0.10:
 
         final_signal = "BEARISH"
 
@@ -59,11 +124,9 @@ def synthesize(
 
         final_signal = "HOLD"
 
-    # Calculate confidence
-    total = (
-        bullish_score +
-        bearish_score
-    )
+    # --------------------------------------------------
+    # Confidence
+    # --------------------------------------------------
 
     if total == 0:
 
@@ -75,127 +138,116 @@ def synthesize(
             abs(difference) / total
         )
 
-    # Reduce confidence during conflict
+    # Reduce confidence if agents disagree
     if conflict:
 
         confidence *= 0.85
 
-    # Create source attribution
+    confidence = round(
+        min(confidence, 1.0),
+        2
+    )
+
+    # --------------------------------------------------
+    # RAG source attribution
+    # --------------------------------------------------
+
     sources = []
 
     for document in retrieved_documents:
 
         source = {
-            "document": document["source"],
-            "page": document["page"]
+            "document": document.get(
+                "source",
+                "Unknown"
+            ),
+
+            "page": document.get(
+                "page",
+                None
+            )
         }
 
         if source not in sources:
 
             sources.append(source)
 
-    # Combine retrieved evidence
+    # --------------------------------------------------
+    # RAG evidence
+    # --------------------------------------------------
+
     evidence = []
 
     for document in retrieved_documents:
 
         evidence.append(
-            f'Source: {document["source"]}, '
-            f'Page: {document["page"]}\n'
-            f'{document["text"]}'
+
+            f'Source: '
+            f'{document.get("source", "Unknown")}, '
+
+            f'Page: '
+            f'{document.get("page", "Unknown")}\n'
+
+            f'{document.get("text", "")}'
         )
 
     evidence_text = "\n\n".join(
         evidence
     )
 
-    # Final structured output
+    # --------------------------------------------------
+    # Final output
+    # --------------------------------------------------
+
     return {
 
         "signal": final_signal,
 
-        "confidence":
-            round(confidence, 2),
+        "confidence": confidence,
 
-        "reasoning":
-            " | ".join(reasons),
+        "reasoning": " | ".join(reasons),
 
-        "conflict_detected":
-            conflict,
+        "conflict_detected": conflict,
 
-        "sources":
-            sources,
+        "sources": sources,
 
-        "evidence":
-            evidence_text
+        "evidence": evidence_text
     }
 
 
+# --------------------------------------------------
+# Standalone test
+# --------------------------------------------------
+
 if __name__ == "__main__":
 
-    # --------------------------------
-    # 1. Simulated specialized agents
-    # --------------------------------
-
-    test_results = [
-
-        {
-            "agent": "volatility",
-            "signal": "BEARISH",
-            "confidence": 0.85,
-            "reasoning":
-                "High volatility detected."
-        },
-
-        {
-            "agent": "volume",
-            "signal": "BULLISH",
-            "confidence": 0.78,
-            "reasoning":
-                "Trading volume is above average."
-        },
-
-        {
-            "agent": "news",
-            "signal": "BEARISH",
-            "confidence": 0.72,
-            "reasoning":
-                "Recent news contains negative signals."
-        }
-    ]
-
-    # --------------------------------
-    # 2. Retrieve RAG evidence
-    # --------------------------------
-
-    query = (
-        "What is the financial "
-        "investment problem described?"
+    from orchestration.parallel_runner import (
+        run_all_agents
     )
 
     print(
-        "\nRetrieving relevant documents..."
+        "\nRunning market agents..."
     )
 
-    retrieved_documents = (
-        retrieve_documents(
-            query,
-            top_k=3
-        )
+    agent_results = run_all_agents("TCS")
+
+    print(
+        "\nRetrieving RAG evidence..."
     )
 
-    # --------------------------------
-    # 3. Synthesis
-    # --------------------------------
+    retrieved_documents = retrieve_documents(
+        "TCS financial performance investment risk",
+        top_k=3
+    )
+
+    print(
+        "\nSynthesizing results..."
+    )
 
     final_result = synthesize(
-        test_results,
+        agent_results,
         retrieved_documents
     )
-
-    # --------------------------------
-    # 4. Display result
-    # --------------------------------
 
     print(
         "\n===== SYNTHESIS RESULT ====="
@@ -212,7 +264,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "Conflict detected:",
+        "Conflict:",
         final_result["conflict_detected"]
     )
 
@@ -224,29 +276,10 @@ if __name__ == "__main__":
         final_result["reasoning"]
     )
 
-    # --------------------------------
-    # 5. Display sources
-    # --------------------------------
-
     print(
-        "\n===== SOURCES ====="
+        "\nSources:"
     )
 
     for source in final_result["sources"]:
 
-        print(
-            f'📄 {source["document"]} '
-            f'- Page {source["page"]}'
-        )
-
-    # --------------------------------
-    # 6. Display retrieved evidence
-    # --------------------------------
-
-    print(
-        "\n===== RAG EVIDENCE ====="
-    )
-
-    print(
-        final_result["evidence"][:2000]
-    )
+        print(source)

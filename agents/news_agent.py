@@ -26,7 +26,30 @@ company_names = {
 }
 
 
+# --------------------------------------------------
+# Convert user ticker to Yahoo Finance ticker
+# --------------------------------------------------
+
+def yahoo_ticker(ticker: str) -> str:
+
+    ticker = ticker.upper().strip()
+
+    # Indian stocks
+    if ticker in ["TCS", "INFY", "RELIANCE"]:
+        return f"{ticker}.NS"
+
+    # Already has exchange suffix
+    if "." in ticker:
+        return ticker
+
+    # US stocks remain unchanged
+    return ticker
+
+
+# --------------------------------------------------
 # Create sentiment analyzer
+# --------------------------------------------------
+
 analyzer = SentimentIntensityAnalyzer()
 
 
@@ -35,46 +58,60 @@ def news_agent(ticker: str) -> AgentResult:
     try:
 
         # --------------------------------------------------
-        # 1. Get recent news
+        # 1. Convert ticker
         # --------------------------------------------------
 
-        stock = yf.Ticker(ticker)
+        yf_ticker = yahoo_ticker(ticker)
+
+        # --------------------------------------------------
+        # 2. Get recent news
+        # --------------------------------------------------
+
+        stock = yf.Ticker(yf_ticker)
+
         news = stock.news
 
         if not news:
+
             raise ValueError(
                 f"No recent news found for {ticker}"
             )
 
         # --------------------------------------------------
-        # 2. Find company name
+        # 3. Find company name
         # --------------------------------------------------
 
-        ticker_upper = ticker.upper()
+        ticker_upper = yf_ticker.upper()
 
         company_name = company_names.get(
             ticker_upper,
-            ticker_upper
+            ticker.upper()
         )
 
         # --------------------------------------------------
-        # 3. Extract relevant headlines
+        # 4. Extract relevant headlines
         # --------------------------------------------------
 
         headlines = []
 
         for item in news:
 
-            content = item.get("content", {})
+            content = item.get(
+                "content",
+                {}
+            )
 
-            title = content.get("title", "")
+            title = content.get(
+                "title",
+                ""
+            )
 
             if not title:
                 continue
 
             title_upper = title.upper()
 
-            # Only keep relevant company headlines
+            # Keep relevant company headlines
             if (
                 ticker_upper in title_upper
                 or company_name in title_upper
@@ -86,25 +123,28 @@ def news_agent(ticker: str) -> AgentResult:
                 break
 
         # --------------------------------------------------
-        # 4. Check headlines
+        # 5. Check headlines
         # --------------------------------------------------
 
         if not headlines:
 
             raise ValueError(
-                f"No relevant news headlines found for {ticker}"
+                f"No relevant news headlines "
+                f"found for {ticker}"
             )
 
         # --------------------------------------------------
-        # 5. Analyze sentiment
+        # 6. Analyze sentiment
         # --------------------------------------------------
 
         sentiment_scores = []
 
         for headline in headlines:
 
-            sentiment = analyzer.polarity_scores(
-                headline
+            sentiment = (
+                analyzer.polarity_scores(
+                    headline
+                )
             )
 
             score = sentiment["compound"]
@@ -112,7 +152,7 @@ def news_agent(ticker: str) -> AgentResult:
             sentiment_scores.append(score)
 
         # --------------------------------------------------
-        # 6. Calculate average sentiment
+        # 7. Calculate average sentiment
         # --------------------------------------------------
 
         average_score = (
@@ -121,7 +161,7 @@ def news_agent(ticker: str) -> AgentResult:
         )
 
         # --------------------------------------------------
-        # 7. Classification
+        # 8. Classification
         # --------------------------------------------------
 
         if average_score >= 0.20:
@@ -137,7 +177,7 @@ def news_agent(ticker: str) -> AgentResult:
             classification = "NEUTRAL"
 
         # --------------------------------------------------
-        # 8. Confidence
+        # 9. Confidence
         # --------------------------------------------------
 
         confidence = min(
@@ -146,24 +186,23 @@ def news_agent(ticker: str) -> AgentResult:
         )
 
         # --------------------------------------------------
-        # 9. Reasoning
+        # 10. Reasoning
         # --------------------------------------------------
 
         reasoning = [
 
-            f"Analyzed {len(headlines)} relevant "
-            f"news headlines.",
+            f"Analyzed {len(headlines)} "
+            f"relevant news headlines.",
 
-            f"Average news sentiment score is "
-            f"{average_score:.2f}.",
+            f"Average news sentiment score "
+            f"is {average_score:.2f}.",
 
             f"Overall news sentiment is "
             f"{classification}."
-
         ]
 
         # --------------------------------------------------
-        # 10. Return standard AgentResult
+        # 11. Return standard AgentResult
         # --------------------------------------------------
 
         return AgentResult(
@@ -192,7 +231,6 @@ def news_agent(ticker: str) -> AgentResult:
                 ),
 
                 reasoning=reasoning
-
             ),
 
             sources=[
@@ -213,14 +251,18 @@ def news_agent(ticker: str) -> AgentResult:
 
             metadata={
 
-                "headlines_analyzed": len(headlines),
+                "headlines_analyzed":
+                    len(headlines),
 
-                "headlines": headlines,
+                "headlines":
+                    headlines,
 
-                "sentiment_scores": sentiment_scores
+                "sentiment_scores":
+                    sentiment_scores,
 
+                "yahoo_ticker":
+                    yf_ticker
             }
-
         )
 
     # --------------------------------------------------
@@ -252,11 +294,9 @@ def news_agent(ticker: str) -> AgentResult:
                 reasoning=[
                     str(e)
                 ]
-
             ),
 
             sources=[],
 
             metadata={}
-
         )
